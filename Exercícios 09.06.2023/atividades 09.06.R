@@ -20,16 +20,19 @@ chen_reparametrizada <- function(y, lambda, mu, tau){
   return (exp1 * exp2)
 }
 
-lambda <- 0.5
-curve(chen_reparametrizada(x, 0.5, 2, tau) ,from=0, to=20, xlab = "y")
-curve(chen_reparametrizada(x, 0.7, 7, tau) ,from=0, to=20, xlab = "y", add = TRUE)
-curve(chen_reparametrizada(x, 0.9, 3, tau) ,from=0, to=20, xlab = "y", add = TRUE, lty = 4)
-curve(chen_reparametrizada(x, 1.1, 8, tau) ,from=0, to=20, xlab = "y", add = TRUE, lty = 3)
+tau <- 0.5
 
-cores <- brewer.pal(3, "Set1")
-curve(chen_reparametrizada(x, 0.7, 7, 0.7), from=0, to=20, xlab="Densidade de propabilidade", col = cores[1])
-curve(chen_reparametrizada(x, 0.7, 7, 0.5), from=0, to=20, xlab="Densidade de propabilidade", add =TRUE, col = cores[2])
-curve(chen_reparametrizada(x, 0.7, 7, 0.2), from=0, to=20, xlab="Densidade de propabilidade", add =TRUE, col = cores[3])
+dark2 <- brewer.pal(4, "Dark2")
+curve(chen_reparametrizada(x, 0.5, 2, tau) ,from=0, to=20, xlab = "y", ylab = "Densidade de probabilidade", col = dark2[1])
+curve(chen_reparametrizada(x, 0.7, 7, tau) ,from=0, to=20, xlab = "y", add = TRUE, col = dark2[2])
+curve(chen_reparametrizada(x, 0.9, 3, tau) ,from=0, to=20, xlab = "y", add = TRUE, col = dark2[3])
+curve(chen_reparametrizada(x, 1.1, 8, tau) ,from=0, to=20, xlab = "y", add = TRUE, col = dark2[4])
+
+set1 <- brewer.pal(4, "Set1")
+curve(chen_reparametrizada(x, 0.7, 7, 0.7), from=0, to=20, xlab="Densidade de propabilidade", col = set1[1])
+curve(chen_reparametrizada(x, 0.7, 7, 0.5), from=0, to=20, add =TRUE, col = set1[2])
+curve(chen_reparametrizada(x, 0.7, 7, 0.3), from=0, to=20, add =TRUE, col = set1[3])
+curve(chen_reparametrizada(x, 0.7, 7, 0.1), from=0, to=20, add =TRUE, col = set1[4])
 
 #note o eixo Y, ele varia de exemplo pra exemplo
 random_chen1 <- rchen(0.5, calcula_omega(0.5, 2, 0.5), 1000000)
