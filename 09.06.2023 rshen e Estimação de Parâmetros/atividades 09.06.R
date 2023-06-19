@@ -67,6 +67,6 @@ negativo_ll_chen <- function(y, parametros){
   log_verossimilhanca<- n*log(delta)+n*log(lambda) + sum((lambda-1)*log(y)) + delta*(sum(1-exp(y^lambda)))+ sum(y^lambda)
   return (-log_verossimilhanca)
 }
-random_chen1 <- rchen(0.5, calcula_delta(0.5, 2, 0.5), 1000)
+random_chen1 <- rchen(0.5, calcula_delta(0.5, 2, 0.5), 10000000)
 suppressWarnings(estimacao <- optim(par=c(2,2), fn=negativo_ll_chen, y=random_chen1, method ="BFGS", hessian =TRUE))
 estimacao$par
