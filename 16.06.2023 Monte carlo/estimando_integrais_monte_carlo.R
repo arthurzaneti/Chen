@@ -39,7 +39,6 @@ area_estimada_poisson <- (b_poisson-a_poisson)*(somatorio_poisson/numero_estimac
 somatorio_poisson <- 0
 glue("A área estimada da distribuição poisson é: {area_estimada_poisson}")
 
-#
 
 
 
