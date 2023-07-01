@@ -70,8 +70,8 @@ lambda <- 0.5
 mu <- 2
 tau <- 0.5
 
-iteracoes_monte_carlo <- 500000
-valores_aleatorios_gerados <- 5000
+iteracoes_monte_carlo <- 500
+valores_aleatorios_gerados <- 500
 
 vetor_estimacoes_lambda <- vector()
 vetor_estimacoes_mu <- vector()
