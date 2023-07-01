@@ -22,37 +22,53 @@
 
 library(progress)
 
-chen_reparametrizada <- function(y, lambda, mu, tau){
-    p1 <- log(1-tau)/(1-exp(mu^lambda))
-    p2 <- lambda*(y^(lambda-1))
-    p3 <- exp((log(1-tau)/(1-exp(mu^lambda)))*(1-exp(y^lambda)) +y^lambda)
-    return(p1*p2*p3)
+rchen_reparametrizada <- function(lambda, mus, tau=0.5){
+  nelementos <- length(mus)
+  romegas <- runif(nelementos) # omega é o quantil da Chen reparametrizada
+  vetor_rchen <- (log(1 - log(1-romegas)* ((1-exp(mus^lambda))/log(1-tau))))^(1/lambda) #função quantílica da Chen reparametrizada em termos do quantil
+  return (vetor_rchen)
 }
 
-# exatamente como está no artigo da Giovanna, pensei em simplificar mais mas assim está mais organizado
-log_vero_betas <- function(mus, lambda, tau){
+log_vero_chen <- function(params, tau, matriz, vetor_random_chen){
+    beta0 <- params[1]
+    beta1 <- params[2]
+    lambda <- params[3]
+    
+    mus <- exp(matriz%*% c(beta0,beta1))
+    
     p1 <- log(log(1-tau)) - log(1-exp(mus^lambda))
-    p2 <- (lambda-1)*log(y) + log(lambda)
-    p3 <- (log(1-tau)*(1-exp(y^lambda))) / (1 - exp(mus^lambda)) + y
-    return (p1 - p2 + p3)
+    p2 <- (lambda-1)*log(vetor_random_chen) + log(lambda)
+    p3 <- (log(1-tau)*(1-exp(vetor_random_chen^lambda))) / (1 - exp(mus^lambda)) + vetor_random_chen
+    return (sum(p1 + p2 + p3))
 }
 
-estima_parametros <- function(vetor_random_chen){
+estima_parametros <- function(vetor_random_chen, matriz, tau=0.5){
   tryCatch({
-    suppressWarnings(estimacao <- optim(par=c(2,2), fn=ll_chen, y=vetor_random_chen, method ="BFGS", hessian =TRUE, control = list(fnscale=-1)))
+    parametros_inciais <- c(1,1,1)
+    tau <- 0.5
+    suppressWarnings(estimacao <- optim(par = parametros_inciais, 
+                                        fn = log_vero_chen,
+                                        tau = tau,
+                                        vetor_random_chen = vetor_random_chen,
+                                        matriz=matriz,
+                                        method ="Nelder-Mead",
+                                        hessian =TRUE, 
+                                        control = list(fnscale=-1)))
     return(estimacao$par)
   },error = function(e){
     return(c(NULL,NULL))
   })
 }
-a
 
-chen_reparametrizada(7, 0.7, 7, 0.5)
-
-tamanho_matriz <- 100
+tamanho_matriz <- 10000
 matriz <- cbind(rep(1, tamanho_matriz), runif(tamanho_matriz))
 
-matriz
-beta <- c(1.5, 1.5)
-mus <- exp(matriz%*%beta)
-View(mus)
+lambda_real <- 1.1
+beta0_real <- 2
+beta1_real <- 1.5
+
+betas <- c(beta0_real, beta1_real)
+mus <- exp(matriz%*% betas)
+vetor_random_chen <- rchen_reparametrizada(lambda_real, mus)
+hist(vetor_random_chen)
+estimacoes <- estima_parametros(vetor_random_chen, matriz)
