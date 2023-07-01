@@ -45,6 +45,7 @@ estima_parametros <- function(vetor_random_chen){
     return(c(NULL,NULL))
   })
 }
+a
 
 chen_reparametrizada(7, 0.7, 7, 0.5)
 
