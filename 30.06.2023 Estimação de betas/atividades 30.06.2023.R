@@ -20,55 +20,146 @@
 # - Coloquei um exemplo de programação em que os intervalos de confiança para a distribuição Kumaraswamy foram obtidos, a ideia é a mesma. 
 # Usar o optim e a hessiana, que é a matriz de segundas derivadas, fazer o negativo dela e inverter, usando a função solve. Esse será o J^{-1}(theta_hat) descrito na seção 3.3 do TCC da Giovana.
 
+#____________________________ESSENTIAL_PACKAGES_________________________________
+install.packages("progress")
 library(progress)
+#______________________________EXTRA_PACKAGES___________________________________
+install.packages(c("flextable", "knitr", "pacman"))
+library(pacman)
+pacman::p_load(flextable, knitr, pacman)
+#_______________________________FUNCTIONS_______________________________________
 
-rchen_reparametrizada <- function(lambda, mus, tau=0.5){
+rchen_rpr <- function(lambda, mus, tau=0.5){
   nelementos <- length(mus)
   romegas <- runif(nelementos) # omega é o quantil da Chen reparametrizada
   vetor_rchen <- (log(1 - log(1-romegas)* ((1-exp(mus^lambda))/log(1-tau))))^(1/lambda) #função quantílica da Chen reparametrizada em termos do quantil
   return (vetor_rchen)
 }
 
-log_vero_chen <- function(params, tau, matriz, vetor_random_chen){
-    beta0 <- params[1]
-    beta1 <- params[2]
-    lambda <- params[3]
+log_vero_chen <- function(par, tau, matriz, y){
+    lambda <- par[1]
+    beta0 <- par[2]
+    beta1 <- par[3]
     
-    mus <- exp(matriz%*% c(beta0,beta1))
+    mds <- exp(matriz%*% c(beta0,beta1))
     
-    p1 <- log(log(1-tau)) - log(1-exp(mus^lambda))
-    p2 <- (lambda-1)*log(vetor_random_chen) + log(lambda)
-    p3 <- (log(1-tau)*(1-exp(vetor_random_chen^lambda))) / (1 - exp(mus^lambda)) + vetor_random_chen
-    return (sum(p1 + p2 + p3))
+    log_vero <- suppressWarnings(log(log(1 - tau) / (1 - exp(mds^lambda))) +
+                             log(lambda) + (lambda - 1) * log(y) +
+                             (log(1 - tau) / (1 - exp(mds^lambda))) * (1 - exp(y^lambda)) + (y^lambda))
+    return(sum(log_vero))
 }
 
-estima_parametros <- function(vetor_random_chen, matriz, tau=0.5){
+estim <- function(vetor_random_chen, matriz, tau=0.5, full = F){
   tryCatch({
     parametros_inciais <- c(1,1,1)
     tau <- 0.5
     suppressWarnings(estimacao <- optim(par = parametros_inciais, 
                                         fn = log_vero_chen,
                                         tau = tau,
-                                        vetor_random_chen = vetor_random_chen,
                                         matriz=matriz,
-                                        method ="Nelder-Mead",
+                                        y = vetor_random_chen,
+                                        method ="BFGS",
                                         hessian =TRUE, 
                                         control = list(fnscale=-1)))
-    return(estimacao$par)
+    if(full){
+      return(estimacao)
+    }else{
+      return(estimacao$par)
+    }
   },error = function(e){
-    return(c(NULL,NULL))
+    return(NULL)
   })
 }
 
-tamanho_matriz <- 10000
-matriz <- cbind(rep(1, tamanho_matriz), runif(tamanho_matriz))
+eval_estim <- function(n_rvalues, monte_carlo_iterations, theta, hist=F){
+  
+  covariables <- cbind(rep(1, n_rvalues), runif(n_rvalues))
+  
+  lambda <- theta[1]
+  beta0 <- theta[2]
+  beta1 <- theta[3]
+  mds <- exp(covariables%*% c(beta0,beta1))
+  
+  lambda_hats <- rep(0, monte_carlo_iterations)
+  beta0_hats <- rep(0, monte_carlo_iterations)
+  beta1_hats <- rep(0, monte_carlo_iterations)
+  
+  pb <- progress_bar$new(format = "Time left: :eta [:bar] :percent", 
+                         total = monte_carlo_iterations)
+  
+  errors <- 0
+  for (i in 1:monte_carlo_iterations){
+    y <- rchen_rpr(lambda, mds)
+    par_hats <- suppressWarnings(estim(y, covariables, tau = 0.5))
+    if(is.null(par_hats[1])||is.null(par_hats[2])||is.null(par_hats[3])){
+      errors <- errors + 1
+      if(i !=1){
+        lambda_hats[i] = lambda_hats[i-1]
+        beta0_hats[i] = beta0_hats[i-1]
+        beta1_hats[i] = beta1_hats[i-1]
+      }
+    }else{
+      lambda_hats[i] = par_hats[1]
+      beta0_hats[i] = par_hats[2]
+      beta1_hats[i] = par_hats[3]
+    }
+    pb$tick()
+  }
+ eval <- matrix(0, nrow=4, ncol=3)
+ eval[1,] <- colMeans(cbind(lambda_hats, beta0_hats, beta1_hats))
+ eval[2,] <- eval[1,] - c(lambda, beta0, beta1)
+ eval[3,] <- apply(cbind(lambda_hats, beta0_hats, beta1_hats), 2, sd)
+ eval[4,] <- eval[2,]^2 + apply(cbind(lambda_hats, beta0_hats, beta1_hats), 2, var)
 
-lambda_real <- 1.1
-beta0_real <- 2
-beta1_real <- 1.5
+ colnames(eval) = c("\u03BB hat", "\u03B2\u2080 hat", "\u03B2\u2081 hat")
+ rownames(eval) = c("Mean", "Bias", "Standard Error", "MSE")
+ 
+ if(hist){
+   opar <- par()
+   par(mfrow = c(2,2), cex.main = 2, family = "serif")
+   hist(lambda_hats, main = "\u03BB hat", xlab = "", ylab = "")
+   ?hist
+   hist(beta0_hats, main = "\u03B2\u2080 hat", xlab = "", ylab = "")
+   hist(beta1_hats, main = "\u03B2\u2081 hat", xlab = "", ylab = "")
+   par(opar)
+ }
+ 
+ return (eval)
+}
+print_as_kable <- function(eval, latex = F){
+  if(latex){
+    kable(eval, format="latex")
+  }else{
+    kable(eval)
+  }
+}
 
-betas <- c(beta0_real, beta1_real)
-mus <- exp(matriz%*% betas)
-vetor_random_chen <- rchen_reparametrizada(lambda_real, mus)
-hist(vetor_random_chen)
-estimacoes <- estima_parametros(vetor_random_chen, matriz)
+print_as_flextable <- function(eval){
+  flextable(as.data.frame(eval))
+}
+
+confidence_intervals <- function(n_rvalues, theta){
+  covariables <- cbind(rep(1,n_rvalues), runif(n_rvalues))
+  lambda <- theta[1]
+  beta0 <- theta[2]
+  beta1 <- theta[3]
+  
+  
+  
+  y = rchen_rpr()
+}
+#_____________________________ESTIMATORS_EVALUATION_____________________________
+
+#eval_estim(n_rvalues, monte_carlo_iterations, theta(lambda, beta0 and beta1), hist = False) is the formatting for eval_estim
+#print as flextable or kable
+
+print_as_kable(eval_estim(50, 50, c(1.1, 2, 1)), latex=F)
+print_as_flextable(eval_estim(50, 5000, c(1.1, 2, 1)))
+print_as_flextable(eval_estim(50, 50000, c(1.1, 2, 1)))
+
+print_as_flextable(eval_estim(50, 50, c(0.7, 1.5, 2)))
+print_as_flextable(eval_estim(50, 5000, c(0.7, 1.5, 2)))
+print_as_flextable(eval_estim(50, 50000,  c(0.7, 1.5, 2)))
+
+
+
