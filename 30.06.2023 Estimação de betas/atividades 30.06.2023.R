@@ -21,25 +21,22 @@
 # Usar o optim e a hessiana, que é a matriz de segundas derivadas, fazer o negativo dela e inverter, usando a função solve. Esse será o J^{-1}(theta_hat) descrito na seção 3.3 do TCC da Giovana.
 
 #__________________________________PACKAGES_____________________________________
-install.packages(c("progress","flextable", "knitr", "pacman"))
+install.packages(c("progress","flextable", "knitr", "pacman", "sandwich", "MASS"))
 library(pacman)
-pacman::p_load(flextable, knitr, pacman)
+pacman::p_load(flextable, knitr, pacman, sandwich, MASS, progress)
 
 #___________________________BASIC_FUNCTIONS_____________________________________
 
 rchen_rpr <- function(lambda, mds, tau=0.5){
   nelementos <- length(mds)
-  romegas <- runif(nelementos) # omega é o quantil da Chen reparametrizada
-  vetor_rchen <- (log(1 - log(1-romegas)* ((1-exp(mds^lambda))/log(1-tau))))^(1/lambda) #função quantílica da Chen reparametrizada em termos do quantil
+  vetor_rchen <- (log(1 - log(1-runif(nelementos))* ((1-exp(mds^lambda))/log(1-tau))))^(1/lambda) #função quantílica da Chen reparametrizada em termos do quantil
   return (vetor_rchen)
 }
 
-log_vero_chen <- function(par, tau, covariables, y){
-    lambda <- par[1]
-    beta0 <- par[2]
-    beta1 <- par[3]
-    
-    mds <- exp(covariables%*% c(beta0,beta1))
+log_vero_chen <- function(theta, tau, covariables, y){
+    lambda <- theta[1]
+    betas <- theta[2:length(theta)]
+    mds <- exp(covariables%*% betas)
     
     log_vero <- suppressWarnings(log(log(1 - tau) / (1 - exp(mds^lambda))) +
                              log(lambda) + (lambda - 1) * log(y) +
@@ -50,9 +47,8 @@ log_vero_chen <- function(par, tau, covariables, y){
 #_______________________________ESTIMATION______________________________________
 
 estim <- function(vetor_random_chen, covariables, tau=0.5, full = F){
-    parametros_inciais <- c(1,1,1)
-    tau <- 0.5
-    tryCatch({suppressWarnings(estimacao <- optim(par = parametros_inciais, 
+    theta_guesses <- c(rep(1, ncol(covariables) +1))
+    tryCatch({suppressWarnings(estimacao <- optim(par = theta_guesses, 
                                         fn = log_vero_chen,
                                         tau = tau,
                                         covariables=covariables,
@@ -72,17 +68,15 @@ estim <- function(vetor_random_chen, covariables, tau=0.5, full = F){
 
 eval_estim <- function(n_rvalues, monte_carlo_iterations, theta, hist=F){
   
-  covariables <- cbind(rep(1, n_rvalues), runif(n_rvalues))
-  
+  covariables <- matrix(rep(1, n_rvalues))
+  for(i in 2:(length(theta) - 1)){
+    covariables <- cbind(covariables, matrix(runif(n_rvalues)))
+  }
   lambda <- theta[1]
-  beta0 <- theta[2]
-  beta1 <- theta[3]
-  mds <- exp(covariables%*% c(beta0,beta1))
+  betas <- theta[2:length(theta)]
+  mds <- exp(covariables%*% betas)
   
-  lambda_hats <- rep(0, monte_carlo_iterations)
-  beta0_hats <- rep(0, monte_carlo_iterations)
-  beta1_hats <- rep(0, monte_carlo_iterations)
-  
+  estims <- matrix(0, nrow= monte_carlo_iterations, ncol=length(theta))
   pb <- progress_bar$new(format = "Time left: :eta [:bar] :percent", 
                          total = monte_carlo_iterations)
   
@@ -93,79 +87,98 @@ eval_estim <- function(n_rvalues, monte_carlo_iterations, theta, hist=F){
     if(is.null(par_hats)){
       errors <- errors + 1
       if(i !=1){
-        lambda_hats[i] = lambda_hats[i-1]
-        beta0_hats[i] = beta0_hats[i-1]
-        beta1_hats[i] = beta1_hats[i-1]
+        estims[i,] = estims[i-1,]
       }
     }else{
-      lambda_hats[i] = par_hats[1]
-      beta0_hats[i] = par_hats[2]
-      beta1_hats[i] = par_hats[3]
+      estims[i,] = par_hats
     }
     pb$tick()
   }
- eval <- matrix(0, nrow=4, ncol=3)
- eval[1,] <- colMeans(cbind(lambda_hats, beta0_hats, beta1_hats))
- eval[2,] <- eval[1,] - c(lambda, beta0, beta1)
- eval[3,] <- apply(cbind(lambda_hats, beta0_hats, beta1_hats), 2, sd)
- eval[4,] <- eval[2,]^2 + apply(cbind(lambda_hats, beta0_hats, beta1_hats), 2, var)
+ eval <- matrix(0, nrow=4, ncol=length(theta))
+ eval[1,] <- colMeans(estims)
+ eval[2,] <- eval[1,] - theta
+ eval[3,] <- apply(estims, 2, sd)
+ eval[4,] <- eval[2,]^2 + apply(estims, 2, var)
 
- colnames(eval) = c("\u03BB hat", "\u03B2\u2080 hat", "\u03B2\u2081 hat")
- rownames(eval) = c("Mean", "Bias", "Standard Error", "MSE")
+ cols <- c("\u03BB hat")
+ for (i in 1:length(betas)){
+   cols <- c(cols, paste0("β", i, " hat"))
+ }
+ colnames(eval) <- cols
+ rownames(eval) <- c("Mean", "Bias", "Standard Error", "MSE")
  
  if(hist){
    opar <- par()
-   par(mfrow = c(2,2), cex.main = 2, family = "serif")
-   hist(lambda_hats, main = "\u03BB hat", xlab = "", ylab = "")
-   ?hist
-   hist(beta0_hats, main = "\u03B2\u2080 hat", xlab = "", ylab = "")
-   hist(beta1_hats, main = "\u03B2\u2081 hat", xlab = "", ylab = "")
-   par(opar)
+   rows <- floor(sqrt(length(theta) * (16/9)))
+   cols <- ceiling(length(theta) / rows)
+   par(mfrow = c(rows, cols), family = "serif")
+   hist(estims[, 1], main = "\u03BB hat", xlab = "", ylab = "")
+   for(i in 2:length(theta)){
+     hist(estims[, i], main = paste0("β", i-1, " hat"), xlab = "", ylab = "")
+   }
+   suppressWarnings(par(opar))
  }
  
  return (eval)
 }
 #_____________________________CONFIDENCE_INTERVALS______________________________
 
-ci <- function(n_rvalues, theta, alpha, monte_carlo = F, monte_carlo_hist = F){
-  
-  covariables <- cbind(rep(1, n_rvalues), runif(n_rvalues))
-  
+ci <- function(n_rvalues, theta, alpha, monte_carlo = FALSE, monte_carlo_hist = FALSE) {
+  covariables <- matrix(rep(1, n_rvalues))
+  for(i in 2:(length(theta) - 1)){
+    covariables <- cbind(covariables, matrix(runif(n_rvalues)))
+  }
   lambda <- theta[1]
-  beta0 <- theta[2]
-  beta1 <- theta[3]
-  
-  mds <- exp(covariables %*% c(beta0, beta1))
+  betas <- theta[2:length(theta)]
+  mds <- exp(covariables%*% betas)
   
   y <- rchen_rpr(lambda, mds)
-  tryCatch({estimation <- estim(y, covariables, full=T)
-    inf <- solve(-estimation$hessian)
+  
+  tryCatch({
+    estimation <- estim(y, covariables, full = TRUE)
     
-    lb <- theta - qnorm(1 - alpha/2)*sqrt(diag(inf))
-    ub <- theta + qnorm(1 - alpha/2)*sqrt(diag(inf))
+    inf <- solve(-estimation$hessian)
     par <- estimation$par
-    if(monte_carlo_hist){
-      return(list(lambda_in_ic = (lb[1] <= par[1] && par[1] <= ub[1]), 
-                  beta0_in_ic = (lb[2] <= par[2] && par[2]<= ub[2]), 
-                  beta1_in_ic = (lb[3] <= par[3] && par[3]<= ub[3]),
-                  lb = lb, ub = ub))
+    
+    lb <- par - qnorm(1 - alpha/2) * sqrt(diag(inf))
+    ub <- par + qnorm(1 - alpha/2) * sqrt(diag(inf))
+    
+    if (monte_carlo_hist) {
+       results <- list(lb[1] <= theta[1] && theta[1] <= ub[1])
+       for (i in 2:length(theta)){
+         results <- append(results,(lb[i] <= theta[i] && theta[i] <= ub[i]))
+       }
+       results <- append(results, lb)
+       results <- append(results, ub)
+       return(results)
     }
-    if(monte_carlo){
-      return(c(lb[1] <= par[1] && par[1] <= ub[1], 
-               lb[2] <= par[2] && par[2]<= ub[2], 
-               lb[3] <= par[3] && par[3]<= ub[3]))
-    }else{
-      return(par)
+    else if (monte_carlo) {
+      results <- c(lb[1] <= theta[1] && theta[1] <= ub[1])
+      for (i in 2:length(theta)){
+        results <- append(results,(lb[i] <= theta[i] && theta[i] <= ub[i]))
+      }
+      return(results)
+    } 
+    else {
+      return(matrix(c(lb,ub), ncol=2))
     }
-    }, error = function(e){ return(NULL)})
+  }, error = function(e) {
+    return(NULL)
+  })
 }
 
+
+
 eval_ci <- function(n_rvalues, monte_carlo_iterations, theta, alpha, hist = F) {
-  covariables <- cbind(rep(1, n_rvalues), runif(n_rvalues))
-  mds <- exp(covariables %*% c(theta[2], theta[3]))
-  lambda_in_ic <- rep(F, monte_carlo_iterations)
-  beta0_in_ic <- rep(F, monte_carlo_iterations)
-  beta1_in_ic <- rep(F, monte_carlo_iterations)
+  covariables <- matrix(rep(1, n_rvalues))
+  for(i in 2:(length(theta) - 1)){
+    covariables <- cbind(covariables, matrix(runif(n_rvalues)))
+  }
+  lambda <- theta[1]
+  betas <- theta[2:length(theta)]
+  mds <- exp(covariables%*% betas)
+  
+  TF_table <- matrix(0, nrow= monte_carlo_iterations, ncol=length(theta))
   errors <- 0
   
   if (!hist) {
@@ -177,21 +190,17 @@ eval_ci <- function(n_rvalues, monte_carlo_iterations, theta, alpha, hist = F) {
       if (is.null(results)) {
         if (i != 1) {
           errors <- errors + 1
-          lambda_in_ic[i] <- lambda_in_ic[i - 1]
-          beta0_in_ic[i] <- beta0_in_ic[i - 1]
-          beta1_in_ic[i] <- beta1_in_ic[i - 1]
+          TF_table[i-1,] <- TF_table[i-1,]
         }
       } else {
-        lambda_in_ic[i] <- results[1]
-        beta0_in_ic[i] <- results[2]
-        beta1_in_ic[i] <- results[3]
+        TF_table[i,] <- results
       }
       pb$tick()
     }
     
   } else {
-    lbs <- matrix(0, monte_carlo_iterations, 3)
-    ubs <- matrix(0, monte_carlo_iterations, 3)
+    lbs <- matrix(0, monte_carlo_iterations, length(theta))
+    ubs <- matrix(0, monte_carlo_iterations, length(theta))
     errors <- 0
     pb <- progress_bar$new(format = "Time left: :eta [:bar] :percent", total = monte_carlo_iterations)
     
@@ -200,40 +209,43 @@ eval_ci <- function(n_rvalues, monte_carlo_iterations, theta, alpha, hist = F) {
       
       if (is.null(results)) {
         if (i != 1) {
-          lambda_in_ic[i] <- lambda_in_ic[i - 1]
-          beta0_in_ic[i] <- beta0_in_ic[i - 1]
-          beta1_in_ic[i] <- beta1_in_ic[i - 1]
-          lbs[i, ] <- lbs[i - 1, ]
-          ubs[i, ] <- ubs[i - 1, ]
+          TF_table[i,] <- TF_table[i-1,]
+          lbs[i,] <- lbs[i-1,]
+          ubs[i,] <- ubs[i-1,]
         }
       } else {
-        lambda_in_ic[i] <- results$lambda_in_ic
-        beta0_in_ic[i] <- results$beta0_in_ic
-        beta1_in_ic[i] <- results$beta1_in_ic
-        lbs[i, ] <- results$lb
-        ubs[i, ] <- results$ub
+        s <- length(theta)
+        TF_table[i,] <- unlist(results[1:s])
+        lbs[i, ] <- unlist(results[(s+1): (2*s)])
+        ubs[i, ] <- unlist(results[(2*s +1): length(results)])
       }
       pb$tick()
     }
     
     opar <- par()
-    par(mfrow = c(3, 1), cex.main = 2, family = "serif")
+    rows <- floor(sqrt(length(theta) * (16/9)))
+    cols <- ceiling(length(theta) / rows)
+    par(mfrow = c(rows, cols), family = "serif")
+    
     hist(lbs[, 1], main = "Confidence interval distributions for λ hat",
-         xlim = c(theta[1] - theta[1] / 5, theta[1] + theta[1] / 5), col = "green")
+         xlim = c(theta[1] - 0.4, theta[1] + 0.4), col = "green")
     hist(ubs[, 1], col = "red", add = TRUE)
+    abline(v=theta[1])
     
-    hist(lbs[, 2], main = "Confidence interval distributions for β₀ hat",
-         xlim = c(theta[2] - theta[2] / 5, theta[2] + theta[2] / 5), col = "green")
-    hist(ubs[, 2], col = "red", add = TRUE)
-    
-    hist(lbs[, 3], main = "Confidence interval distributions for β₁ hat",
-         xlim = c(theta[3] - theta[3] / 5, theta[3] + theta[3] / 5), col = "green")
-    hist(ubs[, 3], col = "red", add = TRUE)
+    for(i in 2:length(theta)){
+      hist(lbs[, i], main = paste0("Confidence interval distributions for β", i-2, " hat"),
+           xlim = c(theta[i] - 0.4, theta[i] + 0.4), col = "green")
+      hist(ubs[, i], col = "red", add = TRUE)
+      abline(v=theta[i])
+    }
+    suppressWarnings(par(opar))
   }
   
-  return(c(sum(lambda_in_ic, na.rm = TRUE) / monte_carlo_iterations, 
-           sum(beta0_in_ic, na.rm = TRUE) / monte_carlo_iterations, 
-           sum(beta1_in_ic, na.rm = TRUE) / monte_carlo_iterations))
+  return_vector <- vector()
+  for(i in 1:length(theta)){
+    return_vector <- append(return_vector, sum(TF_table[,i] / monte_carlo_iterations))
+  }
+  return(return_vector)
 }
 
 #_________________________________PRINTING______________________________________
@@ -250,17 +262,32 @@ print_as_flextable <- function(eval){
 }
 #____________________________________MAIN_______________________________________
 
-#eval_estim(n_rvalues, monte_carlo_iterations, theta(lambda, beta0 and beta1), hist = False) is the formatting for eval_estim
 #print as flextable or kable
+#eval_estim(n_rvalues, monte_carlo_iterations, theta(lambda, beta0,...), hist = False) is the formatting for eval_estim
 
-print_as_kable(eval_estim(50, 500, c(1.1, 2, 1)), latex=T)
-print_as_kable(eval_estim(50, 5000, c(1.1, 2, 1)))
+print_as_kable(eval_estim(50, 500, c(1.1, 2, -2)), latex=T)
+print_as_kable(eval_estim(50, 5000, c(0.7, 1, 2)))
 print_as_flextable(eval_estim(50, 50000, c(1.1, 2, 1)))
 
-print_as_kable(eval_estim(50, 50, c(0.7, 1.5, 2)))
-print_as_kable(eval_estim(50, 5000, c(0.7, 1.5, 2)))
-print_as_kable(eval_estim(50, 50000,  c(0.7, 1.5, 2)))
 
-print(ci1 <- eval_ci(50, 500, c(1.1, 2, 1), 0.05, hist=T))
-ci2 <- eval_ci(50, 5000, c(1.1, 2, 1), 0.05)
-ci3 <- eval_ci(50, 50000, c(1.1, 2, 1), 0.05)
+#eval_ci(n_rvalues, monte_carlo_iterations, theta, hist=F) is the formatting for eval_ci
+
+ci1 <- eval_ci(200, 50, c(1.1, 2, 1))
+ci2 <- eval_ci(200, 500, c(1.1, 2, 1), 0.05, hist=T)
+ci3 <- eval_ci(200, 5000, c(1.1, 2, 1), 0.05)
+
+eval_ci_matrix <- matrix(c(ci1, ci2, ci3), nrow=3, ncol=3)
+colnames(eval_ci_matrix) <- c("λ hat", "β₀ hat", "β₁ hat")
+rownames(eval_ci_matrix) <- c("500 iterations", "5000 iterations", "50000 iterations")
+print_as_kable(eval_ci_df)
+
+
+#multiple betas
+
+print_as_kable(eval_estim(500, 500, c(1.1, 2, -2, 1, 1.2, 1, 1), hist=T)) #it seems like more than 6 betas the program breaks
+print_as_kable(eval_estim(50, 50, c(0.7, 1, 1.2, 1.5, 2)), latex=T)
+print_as_kable(eval_estim(50, 500, c(1.1, 2, -2, 1, -1, 0.5, 2, 0.7, 0.8)))
+
+print(eval_ci(50, 500, c(0.7,1,2,0.3), 0.05, hist=T))
+print(eval_ci(500, 500, c(0.7,1,1,2,0.3,1), 0.05, hist=T))
+print(eval_ci(500, 500, c(0.7,1,1,1), 0.05))
