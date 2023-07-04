@@ -21,7 +21,7 @@
 # Usar o optim e a hessiana, que é a matriz de segundas derivadas, fazer o negativo dela e inverter, usando a função solve. Esse será o J^{-1}(theta_hat) descrito na seção 3.3 do TCC da Giovana.
 
 #__________________________________PACKAGES_____________________________________
-install.packages(c("progress","flextable", "knitr", "pacman", "sandwich", "MASS"))
+install.packages(c("progress","flextable", "knitr", "pacman"))
 library(pacman)
 pacman::p_load(flextable, knitr, pacman, sandwich, MASS, progress)
 
@@ -272,22 +272,22 @@ print_as_flextable(eval_estim(50, 50000, c(1.1, 2, 1)))
 
 #eval_ci(n_rvalues, monte_carlo_iterations, theta, hist=F) is the formatting for eval_ci
 
-ci1 <- eval_ci(200, 50, c(1.1, 2, 1))
+ci1 <- eval_ci(200, 100, c(1.1, 2, 1), 0.05)
 ci2 <- eval_ci(200, 500, c(1.1, 2, 1), 0.05, hist=T)
 ci3 <- eval_ci(200, 5000, c(1.1, 2, 1), 0.05)
 
 eval_ci_matrix <- matrix(c(ci1, ci2, ci3), nrow=3, ncol=3)
 colnames(eval_ci_matrix) <- c("λ hat", "β₀ hat", "β₁ hat")
 rownames(eval_ci_matrix) <- c("500 iterations", "5000 iterations", "50000 iterations")
-print_as_kable(eval_ci_df)
+print_as_kable(eval_ci_matrix)
 
 
 #multiple betas
 
-print_as_kable(eval_estim(500, 500, c(1.1, 2, -2, 1, 1.2, 1, 1), hist=T)) #it seems like more than 6 betas the program breaks
+print_as_kable(eval_estim(500, 500, c(1.1, 2, -2, 1, 1.2, 1, 1), hist=T)) 
 print_as_kable(eval_estim(50, 50, c(0.7, 1, 1.2, 1.5, 2)), latex=T)
 print_as_kable(eval_estim(50, 500, c(1.1, 2, -2, 1, -1, 0.5, 2, 0.7, 0.8)))
 
-print(eval_ci(50, 500, c(0.7,1,2,0.3), 0.05, hist=T))
-print(eval_ci(500, 500, c(0.7,1,1,2,0.3,1), 0.05, hist=T))
-print(eval_ci(500, 500, c(0.7,1,1,1), 0.05))
+print(eval_ci(100, 500, c(0.7,1,2,0.3), 0.05, hist=T))
+print(eval_ci(100, 500, c(0.7,1,1,2,0.3,1), 0.05, hist=T))
+print(eval_ci(100, 5000, c(0.7,1,1,1), 0.05))
