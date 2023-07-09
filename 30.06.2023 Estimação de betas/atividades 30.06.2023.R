@@ -21,9 +21,9 @@
 # Usar o optim e a hessiana, que é a matriz de segundas derivadas, fazer o negativo dela e inverter, usando a função solve. Esse será o J^{-1}(theta_hat) descrito na seção 3.3 do TCC da Giovana.
 
 #__________________________________PACKAGES_____________________________________
-install.packages(c("progress","flextable", "knitr", "pacman"))
+#install.packages(c("progress","flextable", "knitr", "pacman"))
 library(pacman)
-pacman::p_load(flextable, knitr, pacman, sandwich, MASS, progress)
+pacman::p_load(flextable, knitr, progress)
 
 #___________________________BASIC_FUNCTIONS_____________________________________
 
@@ -285,7 +285,10 @@ print_as_kable(eval_ci_matrix)
 #multiple betas
 
 print_as_kable(eval_estim(500, 500, c(1.1, 2, -2, 1, 1.2, 1, 1), hist=T)) 
-print_as_kable(eval_estim(50, 50, c(0.7, 1, 1.2, 1.5, 2)), latex=T)
+
+print_as_kable(eval_estim(30, 5000, c(0.7, 1.1, 0.5)), latex=T)
+print_as_kable(eval_estim(100, 5000, c(1.0, 1, 1.2, -1.5, -2, 0.3)), latex=T)
+
 print_as_kable(eval_estim(50, 500, c(1.1, 2, -2, 1, -1, 0.5, 2, 0.7, 0.8)))
 
 print(eval_ci(100, 500, c(0.7,1,2,0.3), 0.05, hist=T))
